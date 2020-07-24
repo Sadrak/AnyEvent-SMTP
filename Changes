@@ -2,8 +2,11 @@ Revision history for AnyEvent-SMTP
 
 TODO: More documentation for Server
 TODO: More capabilities for Client
-TODO: Authorization for Client
-TODO: TLS
+TODO: More Authorization for Client
+TODO: TLS via starttls
+
+0.11    2020-07-24
+        * Add tld and auth keyword.
 
 0.09    2013-02-12
         * And nobody tells me, that since 6.01 MX resolving became broken ;) Fixed.
