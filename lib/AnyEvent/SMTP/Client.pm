@@ -133,7 +133,11 @@ SMTP server. The same as pair of host:port
 
 =item tls => 'connect'
 
-Enable tls via Net::SSLeay. Optional.
+Enable tls via Net::SSLeay. Optional. See tls in C<AnyEvent::Handle>.
+
+=item tls_ctx => { verify => 1, ... }
+
+Options for tls. Optional. See tls_ctx in C<AnyEvent::Handle>.
 
 =item helo => 'hostname'
 
@@ -141,7 +145,7 @@ HELO message. Optional. By default = hostname()
 
 =item auth => [ 'LOGIN|PLAIN', ... ]
 
-AUTH settings. Optional.
+Settings for SMTP AUTH. Optional. Currently only LOGIN and PLAIN are supported. Following arguments depends on auth-method.
 
 =item from => 'mail@addr.ess'
 
@@ -300,7 +304,13 @@ sub sendmail(%) {
 			$slot_guard = pop;
 			my $fh = shift
 				or return $cb->(undef, "$!");
-			$con = AnyEvent::SMTP::Conn->new( fh => $fh, debug => $args{debug}, timeout => $args{timeout}, tls => $args{tls} );
+			$con = AnyEvent::SMTP::Conn->new(
+                fh => $fh,
+                debug => $args{debug},
+                timeout => $args{timeout},
+                (tls => $args{tls}) x!! exists $args{tls},
+                (tls_ctx => $args{tls_ctx}) x!! exists $args{tls_ctx},
+            );
 			$exc = $con->reg_cb(
 				disconnect => sub {
 					$con or return;

@@ -19,7 +19,8 @@ sub new {
 	my $self = bless { @_ }, $pkg;
 	$self->{h} = AnyEvent::Handle->new(
 		fh => $self->{fh},
-		tls => $self->{tls},
+		(tls => $self->{tls}) x!! exists $self->{tls},
+		(tls_ctx => $self->{tls_ctx}) x!! exists $self->{tls_ctx},
 		on_eof => sub {
 			local *__ANON__ = 'conn.on_eof';
 			warn "eof on handle";
