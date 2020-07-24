@@ -19,6 +19,7 @@ sub new {
 	my $self = bless { @_ }, $pkg;
 	$self->{h} = AnyEvent::Handle->new(
 		fh => $self->{fh},
+		tls => $self->{tls},
 		on_eof => sub {
 			local *__ANON__ = 'conn.on_eof';
 			warn "eof on handle";

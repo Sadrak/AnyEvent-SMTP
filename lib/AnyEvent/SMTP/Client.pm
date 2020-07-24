@@ -22,6 +22,7 @@ use AnyEvent::Util;
 
 use Sys::Hostname;
 use Mail::Address;
+use MIME::Base64;
 
 use AnyEvent::SMTP::Conn;
 
@@ -130,9 +131,17 @@ SMTP server port. Optional. By default = 25
 
 SMTP server. The same as pair of host:port
 
+=item tls => 'connect'
+
+Enable tls via Net::SSLeay. Optional.
+
 =item helo => 'hostname'
 
 HELO message. Optional. By default = hostname()
+
+=item auth => [ 'LOGIN|PLAIN', ... ]
+
+AUTH settings. Optional.
 
 =item from => 'mail@addr.ess'
 
@@ -252,8 +261,10 @@ sub sendmail(%) {
 	$args{cv}->begin if $args{cv};
 	$cv = AnyEvent->condvar;
 	my $end = sub{
+		return if not $cv;
 		undef $run;
 		undef $cv;
+
 		$args{cb}( $res, defined $err ? $err : () );
 		$args{cv}->end if $args{cv};
 		%args = ();
@@ -289,7 +300,7 @@ sub sendmail(%) {
 			$slot_guard = pop;
 			my $fh = shift
 				or return $cb->(undef, "$!");
-			$con = AnyEvent::SMTP::Conn->new( fh => $fh, debug => $args{debug}, timeout => $args{timeout} );
+			$con = AnyEvent::SMTP::Conn->new( fh => $fh, debug => $args{debug}, timeout => $args{timeout}, tls => $args{tls} );
 			$exc = $con->reg_cb(
 				disconnect => sub {
 					$con or return;
@@ -300,33 +311,57 @@ sub sendmail(%) {
 				shift or return $cb->(undef, @_);
 				$con->command("HELO $args{helo}", ok => 250, cb => sub {
 					shift or return $cb->(undef, @_);
-					$con->command("MAIL FROM:<$args{from}>", ok => 250, cb => sub {
-						shift or return $cb->(undef, @_);
 
-						my $cv1 = AnyEvent->condvar;
-						$cv1->begin(sub {
-							undef $cv1;
-							$con->command("DATA", ok => 354, cb => sub {
-								shift or return $cb->(undef, @_);
-								$con->reply("$args{data}");
-								$con->command(".", ok => 250, cb => sub {
-									my $reply = shift or return $cb->(undef, @_);
-									$cb->($reply);
+					my $cv0 = AnyEvent->condvar;
+					$cv0->begin(sub {
+						undef $cv0;
+
+						$con->command("MAIL FROM:<$args{from}>", ok => 250, cb => sub {
+							shift or return $cb->(undef, @_);
+
+							my $cv1 = AnyEvent->condvar;
+							$cv1->begin(sub {
+								undef $cv1;
+								$con->command("DATA", ok => 354, cb => sub {
+									shift or return $cb->(undef, @_);
+									$con->reply("$args{data}");
+									$con->command(".", ok => 250, cb => sub {
+										my $reply = shift or return $cb->(undef, @_);
+										$cb->($reply);
+									});
 								});
 							});
+
+							for ( @to ) {
+								$cv1->begin;
+								$con->command("RCPT TO:<$_>", ok => 250, cb => sub {
+									shift or return $cb->(undef, @_);
+									$cv1->end;
+								});
+							}
+
+							$cv1->end;
 						});
-
-						for ( @to ) {
-							$cv1->begin;
-							$con->command("RCPT TO:<$_>", ok => 250, cb => sub {
-								shift or return $cb->(undef, @_);
-								$cv1->end;
-							});
-						}
-
-						$cv1->end;
 					});
 
+					for ( my $idx = 0 ; $idx <= $#{ $args{auth} // [] } ; $idx++ ) {
+						my $auth_cmd = $idx == 0
+							? "AUTH \U$args{auth}[$idx]"
+							: encode_base64($args{auth}[$idx], "")
+						;
+						my $auth_ok = $idx == $#{ $args{auth} }
+							? 235
+							: 334
+						;
+
+						$cv0->begin;
+						$con->command($auth_cmd, ok => $auth_ok, cb => sub {
+							shift or return $cb->(undef, @_);
+							$cv0->end;
+						});
+					}
+
+					$cv0->end;
 				});
 			});
 		}, sub { $args{timeout} || 30 };
